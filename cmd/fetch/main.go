@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/schollz/progressbar/v3"
 )
 
 func usage() {
@@ -33,12 +35,25 @@ func TsFileExisits(filepath string) bool {
 	return err == nil
 }
 
+func M3u8CountTsFileNumber(lines []string) int64 {
+	count := int64(0)
+
+	for _, line := range lines {
+		if !strings.Contains(line, "#") && strings.Contains(line, ".ts") {
+			count += 1
+		}
+	}
+
+	return count
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 	}
 
 	var wg sync.WaitGroup
+	var bar *progressbar.ProgressBar
 
 	url := os.Args[1]
 
@@ -104,11 +119,15 @@ func main() {
 
 			log.Println(ts.name + ": 下載成功")
 
+			bar.Add(1)
+
 			resp.Body.Close()
 
 			wg.Done()
 		}
 	}()
+
+	title := ""
 
 	go func() {
 		ctx, cancel := chromedp.NewExecAllocator(context.Background(), append(chromedp.DefaultExecAllocatorOptions[:],
@@ -138,15 +157,13 @@ func main() {
 		// 执行浏览器自动化任务
 		_ = chromedp.Run(ctx,
 			chromedp.Navigate(url),
+			chromedp.WaitReady("html"),
+			chromedp.Title(&title),
 			chromedp.ActionFunc(func(ctx context.Context) error {
 				foundwg.Wait()
-
-				fmt.Println("OK")
-
 				return nil
 			}),
 		)
-
 		// if err != nil {
 		// 	log.Fatal(err.Error())
 		// }
@@ -162,6 +179,8 @@ func main() {
 	}
 
 	defer resp.Body.Close()
+
+	fmt.Println("tsLink: ", tsLink)
 
 	URIs := strings.Split(tsLink, "/")
 	lastURIIndex := len(URIs) - 2
@@ -184,6 +203,10 @@ func main() {
 	content := string(m3u8FileData)
 
 	lines := strings.Split(content, "\n")
+
+	n := M3u8CountTsFileNumber(lines)
+
+	bar = progressbar.Default(n)
 
 	for _, line := range lines {
 		if strings.Contains(line, "URI=") {
@@ -221,4 +244,18 @@ func main() {
 	}
 
 	wg.Wait()
+
+	mp4FilePath := filepath.Join(mp4Path, "video.mp4")
+
+	command := fmt.Sprint("ffmpeg", " -protocol_whitelist \"file,http,crypto,tcp\" -i ", m3u8FilePath, " -c copy ", mp4FilePath)
+
+	fmt.Println(command)
+
+	cmd := exec.Command("ffmpeg", "-protocol_whitelist", "file,http,crypto,tcp", "-i", m3u8FilePath, "-c", "copy", mp4FilePath)
+	output, err := cmd.Output()
+	if err != nil {
+		log.Fatal(output)
+	}
+
+	fmt.Println("[+]\tDownload Successful\t[+]")
 }
