@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -52,7 +53,10 @@ func main() {
 		usage()
 	}
 
+	startTime := time.Now()
+
 	var wg sync.WaitGroup
+	var mu sync.Mutex
 	var bar *progressbar.ProgressBar
 
 	url := os.Args[1]
@@ -83,11 +87,12 @@ func main() {
 
 	tsFileCh := make(chan TsFile, 1000)
 
+	downloadFailFilePath := filepath.Join(dirname, "fail.url.txt")
+	downloadFileHandler, err := os.OpenFile(downloadFailFilePath, os.O_CREATE|os.O_APPEND, 0777)
+
 	// 下載器
-	for range 20 {
+	for range 15 {
 		go func() {
-			downloadFailFilePath := filepath.Join(dirname, "fail.url.txt")
-			downloadFileHandler, err := os.OpenFile(downloadFailFilePath, os.O_CREATE|os.O_APPEND, 0777)
 
 			if err != nil {
 				log.Fatal(err.Error())
@@ -104,7 +109,11 @@ func main() {
 				resp, err := http.Get(ts.url)
 				if err != nil {
 					log.Println(ts.url + ": 下載失敗")
+
+					mu.Lock()
 					downloadFileHandler.WriteString(ts.url + "\n")
+					mu.Unlock()
+
 					wg.Done()
 					continue
 				}
@@ -263,5 +272,6 @@ func main() {
 		log.Fatal(output)
 	}
 
+	fmt.Printf("[+]\tTotal Time: %v\t[+]\n", time.Since(startTime))
 	fmt.Println("[+]\tDownload Successful\t[+]")
 }
