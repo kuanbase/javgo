@@ -84,48 +84,51 @@ func main() {
 	tsFileCh := make(chan TsFile, 1000)
 
 	// 下載器
-	go func() {
-		downloadFailFilePath := filepath.Join(dirname, "fail.url.txt")
-		downloadFileHandler, err := os.OpenFile(downloadFailFilePath, os.O_CREATE|os.O_APPEND, 0777)
-
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-
-		for ts := range tsFileCh {
-			if TsFileExisits(ts.path) {
-				log.Printf("%s 文件已存在", ts.name)
-				wg.Done()
-				continue
-			}
-
-			resp, err := http.Get(ts.url)
-			if err != nil {
-				log.Println(ts.url + ": 下載失敗")
-				downloadFileHandler.WriteString(ts.url + "\n")
-				wg.Done()
-				continue
-			}
-
-			data, err := io.ReadAll(resp.Body)
+	for range 20 {
+		go func() {
+			downloadFailFilePath := filepath.Join(dirname, "fail.url.txt")
+			downloadFileHandler, err := os.OpenFile(downloadFailFilePath, os.O_CREATE|os.O_APPEND, 0777)
 
 			if err != nil {
-				log.Println(ts.path + ": 寫入失敗")
-				wg.Done()
-				continue
+				log.Fatal(err.Error())
 			}
 
-			os.WriteFile(ts.path, data, 0777)
+			for ts := range tsFileCh {
+				if TsFileExisits(ts.path) {
+					log.Printf("%s 文件已存在", ts.name)
+					bar.Add(1)
+					wg.Done()
+					continue
+				}
 
-			log.Println(ts.name + ": 下載成功")
+				resp, err := http.Get(ts.url)
+				if err != nil {
+					log.Println(ts.url + ": 下載失敗")
+					downloadFileHandler.WriteString(ts.url + "\n")
+					wg.Done()
+					continue
+				}
 
-			bar.Add(1)
+				data, err := io.ReadAll(resp.Body)
 
-			resp.Body.Close()
+				if err != nil {
+					log.Println(ts.path + ": 寫入失敗")
+					wg.Done()
+					continue
+				}
 
-			wg.Done()
-		}
-	}()
+				os.WriteFile(ts.path, data, 0777)
+
+				log.Println(ts.name + ": 下載成功")
+
+				bar.Add(1)
+
+				resp.Body.Close()
+
+				wg.Done()
+			}
+		}()
+	}
 
 	title := ""
 
@@ -243,8 +246,11 @@ func main() {
 		}
 	}
 
+	// 等待所有下載ts文件完成。
 	wg.Wait()
+	close(tsFileCh)
 
+	// 下載完成後，將ts文件合并mp4文件。
 	mp4FilePath := filepath.Join(mp4Path, "video.mp4")
 
 	command := fmt.Sprint("ffmpeg", " -protocol_whitelist \"file,http,crypto,tcp\" -i ", m3u8FilePath, " -c copy ", mp4FilePath)

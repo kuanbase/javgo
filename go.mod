@@ -6,7 +6,6 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20250109193942-1ec2f6cf5d86
 	github.com/chromedp/chromedp v0.11.2
 	github.com/schollz/progressbar/v3 v3.18.0
-	golang.org/x/net v0.34.0
 )
 
 require (
